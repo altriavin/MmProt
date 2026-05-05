@@ -2,80 +2,6 @@
 
 MmProt is a multi-modal protein representation learning framework that fuses protein sequence and structure information for mutation effect prediction. It adopts a multi-stage training strategy: cross-modal alignment, masked language model fine-tuning, and downstream task adaptation.
 
-## Architecture
-
-MmProt uses ESM-2 (650M) as the sequence encoder and SaProt (650M) as the structure encoder. A Flash Attention-based BERT Fusion Encoder performs cross-modal fusion.
-
-```
-Sequence  ──► ESM-2 (frozen) ──► Seq Projection ──┐
-                                                   ├──► Fusion Encoder (BERT + Flash Attention) ──► Output
-Structure ──► SaProt (frozen) ──► Stu Projection ──┘
-```
-
-## Training Stages
-
-### Stage I: Cross-Modal Alignment Pre-training
-
-Aligns sequence and structure representations via contrastive learning. Data augmentation (synonymous amino acid substitution, structure token masking, embedding rotation noise) generates multi-view representations. InfoNCE loss pulls together different views of the same protein.
-
-- Data format: LMDB containing SaProt-style structure-sequence tokens
-- Training: Multi-node distributed (torchrun, 2 nodes x 8 GPUs)
-- Loss: InfoNCE contrastive loss
-
-```bash
-cd stage_I
-bash pretrain.sh
-```
-
-### Stage II: Masked Language Model Fine-tuning
-
-Performs MLM training on the aligned Fusion Encoder from Stage I to enhance protein sequence understanding.
-
-- Data format: CSV with `seq` (amino acid sequence) and `ss` (SaProt structure sequence)
-- Training: Single-node multi-GPU (torchrun)
-- Loss: Masked Cross-Entropy
-
-```bash
-cd stage_II
-bash train.sh <gpu_ids> <data_name>
-```
-
-### Stage III: Few-shot DMS Mutation Effect Prediction
-
-Loads Stage II pre-trained weights and fine-tunes on Deep Mutational Scanning (DMS) data in a few-shot setting. The model scores mutation sites via a mask-then-predict strategy, trained with Bradley-Terry ranking loss and MLM auxiliary loss.
-
-- Data format: CSV with `ss` (structure sequence), `mut` (mutation annotation, e.g. `A123V`), `label` (functional score)
-- Training: Single GPU
-- Loss: Bradley-Terry ranking loss + Masked Cross-Entropy
-- Metrics: PCC, SCC, RMSE
-
-```bash
-cd stage_III
-bash train_dms_fewshot.sh <gpu_ids> <few_shot_size> [beta] [gamma] [seed]
-```
-
-## Downstream Tasks
-
-### Protein Fitness Prediction
-
-Evaluates mutation fitness prediction on multiple DMS datasets, supporting data splits by mutation, position, regime, or score.
-
-Supported datasets: avgfp, gb1, pab1, ube4b, tem-1, dlg4-2022-abundance, dlg4-2022-binding, grb2-abundance, grb2-binding, pten-abundance, pten-activity
-
-```bash
-cd protein_fitness_prediction
-bash train_test_multi.sh <gpu_ids> <data_name> [split_prefix] [beta] [gamma]
-```
-
-### Protein Stability Prediction
-
-Predicts the effect of mutations on protein thermodynamic stability (ddG). Runs 3 times with different random seeds and reports averaged results.
-
-```bash
-cd protein_stability_prediction
-bash train_test_seed.sh <gpu_ids> <data_name> [test_name] [beta] [gamma]
-```
-
 ## Installation
 
 ### Dependencies
@@ -112,9 +38,132 @@ The framework depends on the following pre-trained models, which are automatical
 
 For offline environments, download the models in advance and update the paths in `constants.py`.
 
+### Model Checkpoints and Processed Data
+
+The MmProt pre-trained weights/checkpoints and all processed datasets used in this project will be made publicly available after the paper is accepted.
+
+## Architecture
+
+MmProt uses ESM-2 (650M) as the sequence encoder and SaProt (650M) as the structure encoder. A Flash Attention-based BERT Fusion Encoder performs cross-modal fusion.
+
+```text
+Sequence  ──► ESM-2 (frozen) ──► Seq Projection ──┐
+                                                   ├──► Fusion Encoder (BERT + Flash Attention) ──► Output
+Structure ──► SaProt (frozen) ──► Stu Projection ──┘
+```
+
+## Training Stages
+
+### Stage I: Cross-Modal Alignment Pre-training
+
+Aligns sequence and structure representations via contrastive learning. Data augmentation (synonymous amino acid substitution, structure token masking, embedding rotation noise) generates multi-view representations. InfoNCE loss pulls together different views of the same protein.
+
+- Data format: LMDB containing SaProt-style structure-sequence tokens
+- Training: Multi-node distributed (torchrun, 2 nodes x 8 GPUs)
+- Loss: InfoNCE contrastive loss
+
+Command:
+
+```bash
+cd stage_I
+bash pretrain.sh
+```
+
+Example:
+
+```bash
+cd stage_I
+bash pretrain.sh
+```
+
+### Stage II: Masked Language Model Fine-tuning
+
+Performs MLM training on the aligned Fusion Encoder from Stage I to enhance protein sequence understanding.
+
+- Data format: CSV with `seq` (amino acid sequence) and `ss` (SaProt structure sequence)
+- Training: Single-node multi-GPU (torchrun)
+- Loss: Masked Cross-Entropy
+
+Command:
+
+```bash
+cd stage_II
+bash train.sh <gpu_ids> <data_name>
+```
+
+Example:
+
+```bash
+cd stage_II
+bash train.sh 0,1,2,3 uniref50
+```
+
+### Stage III: Few-shot DMS Mutation Effect Prediction
+
+Loads Stage II pre-trained weights and fine-tunes on Deep Mutational Scanning (DMS) data in a few-shot setting. The model scores mutation sites via a mask-then-predict strategy, trained with Bradley-Terry ranking loss and MLM auxiliary loss.
+
+- Data format: CSV with `ss` (structure sequence), `mut` (mutation annotation, e.g. `A123V`), `label` (functional score)
+- Training: Single GPU
+- Loss: Bradley-Terry ranking loss + Masked Cross-Entropy
+- Metrics: PCC, SCC, RMSE
+
+Command:
+
+```bash
+cd stage_III
+bash train_dms_fewshot.sh <gpu_ids> <few_shot_size> [beta] [gamma] [seed]
+```
+
+Example:
+
+```bash
+cd stage_III
+bash train_dms_fewshot.sh 0 16 1.0 0.5 42
+```
+
+## Downstream Tasks
+
+### Protein Fitness Prediction
+
+Evaluates mutation fitness prediction on multiple DMS datasets, supporting data splits by mutation, position, regime, or score.
+
+Supported datasets: avgfp, gb1, pab1, ube4b, tem-1, dlg4-2022-abundance, dlg4-2022-binding, grb2-abundance, grb2-binding, pten-abundance, pten-activity
+
+Command:
+
+```bash
+cd protein_fitness_prediction
+bash train_test_multi.sh <gpu_ids> <data_name> [split_prefix] [beta] [gamma]
+```
+
+Example:
+
+```bash
+cd protein_fitness_prediction
+bash train_test_multi.sh 0 avgfp mutation 1.0 0.5
+```
+
+### Protein Stability Prediction
+
+Predicts the effect of mutations on protein thermodynamic stability (ddG). Runs 3 times with different random seeds and reports averaged results.
+
+Command:
+
+```bash
+cd protein_stability_prediction
+bash train_test_seed.sh <gpu_ids> <data_name> [test_name] [beta] [gamma]
+```
+
+Example:
+
+```bash
+cd protein_stability_prediction
+bash train_test_seed.sh 0 stability_train stability_test 1.0 0.5
+```
+
 ## Project Structure
 
-```
+```text
 MmProt/
 ├── stage_I/                          # Stage I: Cross-modal alignment
 │   ├── pretrain.sh
