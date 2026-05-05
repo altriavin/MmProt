@@ -1,0 +1,100 @@
+import math
+import torch
+import torch.nn.functional as F
+from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq import metrics
+
+from .utils import eval_reg
+from .InfoNCE import RnCLoss, BT_loss, CustomMultiLossLayer
+
+from torch import nn
+import torch.distributed as dist
+
+@register_criterion("fla_inp_criterion")
+class seq_stu_criterion(FairseqCriterion):
+    def add_args(parser):
+        parser.add_argument("--temperature", type=float, default=1.0)
+        parser.add_argument("--task_loss_weight", type=float, default=0.5)
+        parser.add_argument("--cl_loss_weight", type=float, default=0.5)
+
+
+    def __init__(self, task):
+        super().__init__(task)
+
+        tau = getattr(task.args, "temperature", 2.0)
+
+        self.temperature = tau
+        self.task_weight = getattr(task.args, "task_loss_weight", 0.7)
+        self.cl_weight = getattr(task.args, "cl_loss_weight", 0.3)
+
+        self.mse_loss = nn.MSELoss()
+        self.rnk_loss_fn = RnCLoss(temperature=self.temperature, label_diff='l1', feature_sim='l2')
+        # self.aggre_loss = CustomMultiLossLayer(3)
+
+    def forward(self, model, sample):
+        enc = model.encoder(**sample["net_input"])
+
+        logits_wt = enc["encoder_out"]["logits"]["wt"]
+        logits_mt = enc["encoder_out"]["logits"]["mt"]
+        logits = logits_wt - logits_mt
+        labels = sample["target"]["labels"]
+
+        z_wt = enc["encoder_out"]["output_z"]["wt"]
+        z_mt = enc["encoder_out"]["output_z"]["mt"]
+
+        mse_loss = self.mse_loss(logits, labels)
+        bt_loss = BT_loss(logits, labels)
+        rnc_loss = self.rnk_loss_fn(z_wt, z_mt, logits_wt, logits_mt)
+
+        # loss = self.aggre_loss([mse_loss, bt_loss, rnc_loss])
+        loss = mse_loss + self.task_weight * bt_loss + self.cl_weight * rnc_loss
+        
+        loss_item = {
+            "loss": loss.item(),
+            "mse_loss": mse_loss.item(),
+            "bt_loss": bt_loss.item(),
+            "rnc_loss": rnc_loss.item(),
+        }
+
+        if not model.training:
+            result_reg = eval_reg(logits.detach().cpu().numpy(), labels.detach().cpu().numpy())
+            logging_output = {
+                **loss_item, **result_reg
+            }
+        else:
+            logging_output = {
+                **loss_item
+            }
+
+        return loss, len(sample), logging_output
+
+    
+    @staticmethod
+    def reduce_metrics(logging_outputs) -> None:
+        n = max(1, len(logging_outputs))
+
+        loss_sum = sum(log.get("loss", 0.0) for log in logging_outputs)
+
+        metrics.log_scalar("loss", loss_sum / n, n)
+
+        if any("RMSE" in log for log in logging_outputs):
+            rmse_sum  = sum(log.get("RMSE", 0.0) for log in logging_outputs)
+            pcc_sum  = sum(log.get("PCC", 0.0) for log in logging_outputs)
+            scc_sum  = sum(log.get("SCC", 0.0) for log in logging_outputs)
+
+            metrics.log_scalar("RMSE", rmse_sum / n, n)
+            metrics.log_scalar("PCC",  pcc_sum / n, n)
+            metrics.log_scalar("SCC",  scc_sum / n, n)
+        else:
+            mse_loss_sum = sum(log.get("mse_loss", 0.0) for log in logging_outputs)
+            task_loss_sum = sum(log.get("bt_loss", 0.0) for log in logging_outputs)
+            cl_loss_sum = sum(log.get("rnc_loss", 0.0) for log in logging_outputs)
+
+            metrics.log_scalar("mse_loss", mse_loss_sum / n, n)
+            metrics.log_scalar("bt_loss",  task_loss_sum / n, n)
+            metrics.log_scalar("rnc_loss",  cl_loss_sum / n, n)
+            
+
+    @staticmethod
+    def logging_outputs_can_be_summed() -> bool:
+        return False
