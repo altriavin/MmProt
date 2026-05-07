@@ -1,13 +1,30 @@
-# MmProt
+# MmProt: Structure-Prompted Multimodal Protein Language Model
 
-MmProt is a multi-modal protein representation learning framework that fuses protein sequence and structure information for mutation effect prediction. It adopts a multi-stage training strategy: cross-modal alignment, masked language model fine-tuning, and downstream task adaptation.
+Official repository for **MmProt**, a **M**ulti**m**odal **Prot**ein Language Model for structure-prompted, preference-aligned fitness prediction under limited experimentally grounded supervision.
+
+MmProt integrates sequence and structure information through multimodal contrastive pre-training, target-specific evolutionary specialization, and preference-based fitness adaptation. By using the wild-type structure as a structural prompt, MmProt aims to better model mutation effects when only limited DMS measurements are available.
+
+## Overview
+
+MmProt consists of three main stages:
+
+1. **Stage I: Multimodal Contrastive Pre-training**  
+   MmProt is pretrained on large-scale protein sequence--structure pairs to learn informative sequence--structure representations in a shared latent space.
+
+2. **Stage II: Structure-Prompted Evolutionary Specialization**  
+   For each target protein, MmProt uses the wild-type structure as a fixed structural prompt and performs masked language modeling on naturally occurring related variants.
+
+3. **Stage III: Structure-Prompted Fitness Prediction**  
+   When limited DMS measurements are available, MmProt performs preference-based fine-tuning to align model-induced variant rankings with experimental fitness preferences.
+
+For protein structures, Foldseek is used to convert structural information into token sequences before training and inference.
 
 ## Installation
 
-### Dependencies
+### Requirements
 
-- Python 3.10+
-- PyTorch 2.4.1+cu121
+- Python 3.10
+- PyTorch 2.4.1 + CUDA 12.1
 - fairseq
 - transformers
 - flash-attn
@@ -19,194 +36,94 @@ MmProt is a multi-modal protein representation learning framework that fuses pro
 ### Setup
 
 ```bash
-# Downgrade pip first (required for fairseq installation)
+# Downgrade pip first. This is required for fairseq installation.
 pip install pip==24.0
 
-pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch
+pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
 
-pip install fairseq transformers flash-attn einops biopython lmdb pandas
+# Install dependencies
+pip install fairseq
+pip install pandas
+pip install transformers
+pip install einops
+pip install biopython
+pip install lmdb
 ```
 
-> **Note:** pip must be downgraded to 24.0 before installing fairseq, otherwise the installation may fail.
+> **Note:** `pip` should be downgraded to version `24.0` before installing `fairseq`, otherwise the installation may fail.
 
-### Pre-trained Models
+## Pretrained Model Dependencies
 
-The framework depends on the following pre-trained models, which are automatically downloaded from HuggingFace on first run:
+MmProt depends on the following pretrained protein language models, which are automatically downloaded from HuggingFace on the first run:
 
-- **ESM-2**: `facebook/esm2_t33_650M_UR50D`
-- **SaProt**: `westlake-repl/SaProt_650M_AF2`
+- ESM-2: `facebook/esm2_t33_650M_UR50D`
+- SaProt: `westlake-repl/SaProt_650M_AF2`
 
-For offline environments, download the models in advance and update the paths in `constants.py`.
+For offline environments, please download these models in advance and update the corresponding paths in `constants.py`.
 
-### Model Checkpoints and Processed Data
+## Quick Start
 
-The MmProt pre-trained weights/checkpoints and all processed datasets used in this project will be made publicly available after the paper is accepted.
+### Stage I: Multimodal Contrastive Pre-training
 
-## Architecture
+Stage I performs large-scale sequence--structure contrastive pre-training.
 
-MmProt uses ESM-2 (650M) as the sequence encoder and SaProt (650M) as the structure encoder. A Flash Attention-based BERT Fusion Encoder performs cross-modal fusion.
+```bash
+cd stage_I
+bash pretrain.sh
+```
+
+The pre-training data follows the SaProt-style sequence--structure processing pipeline. In our experiments, Stage I was trained on 40 million protein sequence--structure pairs using 16 A800 GPUs for approximately one month.
+
+> Due to conference anonymity requirements, pretrained MmProt checkpoints will be released after paper acceptance.
+
+### Stage II: Structure-Prompted Evolutionary Specialization
+
+Stage II performs target-specific masked language modeling using naturally occurring related variants and the wild-type structure as a structural prompt.
+
+```bash
+cd stage_II
+bash train.sh
+```
+
+The trained checkpoint will be saved to:
 
 ```text
-Sequence  ──► ESM-2 (frozen) ──► Seq Projection ──┐
-                                                   ├──► Fusion Encoder (BERT + Flash Attention) ──► Output
-Structure ──► SaProt (frozen) ──► Stu Projection ──┘
+/root/autodl-tmp/MmProt/stage_II/toy/checkpoint_last.pt
 ```
 
-## Training Stages
+### Stage III: Few-shot DMS Adaptation
 
-### Stage I: Cross-Modal Alignment Pre-training
-
-Aligns sequence and structure representations via contrastive learning. Data augmentation (synonymous amino acid substitution, structure token masking, embedding rotation noise) generates multi-view representations. InfoNCE loss pulls together different views of the same protein.
-
-- Data format: LMDB containing SaProt-style structure-sequence tokens
-- Training: Multi-node distributed (torchrun, 2 nodes x 8 GPUs)
-- Loss: InfoNCE contrastive loss
-
-Command:
-
-```bash
-cd stage_I
-bash pretrain.sh
-```
-
-Example:
-
-```bash
-cd stage_I
-bash pretrain.sh
-```
-
-### Stage II: Masked Language Model Fine-tuning
-
-Performs MLM training on the aligned Fusion Encoder from Stage I to enhance protein sequence understanding.
-
-- Data format: CSV with `seq` (amino acid sequence) and `ss` (SaProt structure sequence)
-- Training: Single-node multi-GPU (torchrun)
-- Loss: Masked Cross-Entropy
-
-Command:
-
-```bash
-cd stage_II
-bash train.sh <gpu_ids> <data_name>
-```
-
-Example:
-
-```bash
-cd stage_II
-bash train.sh 0,1,2,3 uniref50
-```
-
-### Stage III: Few-shot DMS Mutation Effect Prediction
-
-Loads Stage II pre-trained weights and fine-tunes on Deep Mutational Scanning (DMS) data in a few-shot setting. The model scores mutation sites via a mask-then-predict strategy, trained with Bradley-Terry ranking loss and MLM auxiliary loss.
-
-- Data format: CSV with `ss` (structure sequence), `mut` (mutation annotation, e.g. `A123V`), `label` (functional score)
-- Training: Single GPU
-- Loss: Bradley-Terry ranking loss + Masked Cross-Entropy
-- Metrics: PCC, SCC, RMSE
-
-Command:
+Stage III performs preference-based adaptation using limited DMS measurements.
 
 ```bash
 cd stage_III
-bash train_dms_fewshot.sh <gpu_ids> <few_shot_size> [beta] [gamma] [seed]
+bash train_dms_fewshot.sh 0 8
 ```
 
-Example:
+Arguments:
 
-```bash
-cd stage_III
-bash train_dms_fewshot.sh 0 16 1.0 0.5 42
+```text
+0  -> GPU ID
+8  -> number of labeled variants
 ```
 
-## Downstream Tasks
+## Downstream Experiments
 
 ### Protein Fitness Prediction
 
-Evaluates mutation fitness prediction on multiple DMS datasets, supporting data splits by mutation, position, regime, or score.
-
-Supported datasets: avgfp, gb1, pab1, ube4b, tem-1, dlg4-2022-abundance, dlg4-2022-binding, grb2-abundance, grb2-binding, pten-abundance, pten-activity
-
-Command:
-
 ```bash
 cd protein_fitness_prediction
-bash train_test_multi.sh <gpu_ids> <data_name> [split_prefix] [beta] [gamma]
-```
-
-Example:
-
-```bash
-cd protein_fitness_prediction
-bash train_test_multi.sh 0 avgfp mutation 1.0 0.5
+bash train_test_multi.sh
 ```
 
 ### Protein Stability Prediction
 
-Predicts the effect of mutations on protein thermodynamic stability (ddG). Runs 3 times with different random seeds and reports averaged results.
-
-Command:
-
 ```bash
 cd protein_stability_prediction
-bash train_test_seed.sh <gpu_ids> <data_name> [test_name] [beta] [gamma]
+bash train_test_seed.sh
 ```
 
-Example:
+## Model Checkpoints and Processed Data
 
-```bash
-cd protein_stability_prediction
-bash train_test_seed.sh 0 stability_train stability_test 1.0 0.5
-```
-
-## Project Structure
-
-```text
-MmProt/
-├── stage_I/                          # Stage I: Cross-modal alignment
-│   ├── pretrain.sh
-│   └── pkg_seq_stu/
-│       ├── constants.py
-│       ├── models/
-│       │   ├── seq_stu_model.py      # Alignment model (InfoNCE)
-│       │   ├── seq_encoder.py        # ESM-2 encoder
-│       │   ├── stu_encoder.py        # SaProt encoder
-│       │   └── fla_attn/             # Flash Attention BERT
-│       ├── criterions/
-│       │   └── seq_stu_loss.py       # InfoNCE contrastive loss
-│       └── tasks/
-│           ├── seq_stu_tasks.py      # LMDB data loading
-│           └── data_augment.py       # Sequence/structure augmentation
-│
-├── stage_II/                         # Stage II: MLM fine-tuning
-│   ├── train.sh
-│   └── pkg_seq_stu/
-│       ├── models/
-│       │   └── task_sft_model.py     # MLM prediction head
-│       ├── criterions/
-│       │   └── seq_stu_loss.py       # Masked Cross-Entropy
-│       └── tasks/
-│           ├── seq_stu_tasks.py      # CSV data loading
-│           └── data_augment.py       # MLM masking
-│
-├── stage_III/                        # Stage III: Few-shot DMS
-│   ├── train_dms_fewshot.sh
-│   └── pkg_seq_stu/
-│       ├── models/
-│       │   ├── few_model.py          # Few-shot model (cached inference)
-│       │   └── task_sft_model.py     # Mutation scoring model
-│       ├── criterions/
-│       │   └── seq_stu_loss.py       # BT ranking + MLM loss
-│       └── tasks/
-│           └── seq_stu_tasks.py      # DMS few-shot data loading
-│
-├── protein_fitness_prediction/       # Downstream: fitness prediction
-│   ├── train_test_multi.sh
-│   └── pkg_seq_stu/
-│
-└── protein_stability_prediction/     # Downstream: stability prediction (ddG)
-    ├── train_test_seed.sh
-    └── pkg_seq_stu/
-```
+The MmProt pretrained weights, stage-specific checkpoints, and processed datasets used in this project will be made publicly available after the paper is accepted.

@@ -37,7 +37,6 @@ class seq_stu_criterion(FairseqCriterion):
         self.task_weight = getattr(task.args, "task_loss_weight", 1.0)
 
         self.mlm_loss_func = MaskedCrossEntropyLoss()
-        self.mse_loss_func = nn.MSELoss()
         # self.rnk_loss_fn = RnCLoss(...)
         # self.expert_model = export_encoder()
 
@@ -91,13 +90,10 @@ class seq_stu_criterion(FairseqCriterion):
         # lambda_loss = lambdaLoss(logits.unsqueeze(0), labels.unsqueeze(0))
         lambda_loss = BT_loss(logits, labels)
 
-        mse_loss = self.mse_loss_func(logits, labels)
-
         loss = self.beta * lambda_loss  + self.gamma * mlm_loss
 
         loss_item = {
             "loss": loss.item(),
-            "main_loss": mse_loss.item(),
             "rank_loss": lambda_loss.item(),
             "mlm_loss": mlm_loss.item(),
         }
@@ -118,11 +114,9 @@ class seq_stu_criterion(FairseqCriterion):
         sample_size = sum(log.get("sample_size", 0) for log in logging_outputs)
         metrics.log_scalar("loss", loss_sum / n, sample_size, round=3)
 
-        mse_loss_sum = sum(log.get("main_loss", 0.0) for log in logging_outputs)
         task_loss_sum = sum(log.get("rank_loss", 0.0) for log in logging_outputs)
         cl_loss_sum = sum(log.get("mlm_loss", 0.0) for log in logging_outputs)
 
-        metrics.log_scalar("main_loss", mse_loss_sum / n, sample_size, round=3)
         metrics.log_scalar("rank_loss",  task_loss_sum / n, sample_size, round=3)
         metrics.log_scalar("mlm_loss",  cl_loss_sum / n, sample_size, round=3)
 

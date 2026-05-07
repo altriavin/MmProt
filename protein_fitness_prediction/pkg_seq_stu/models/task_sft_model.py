@@ -17,7 +17,7 @@ from fairseq.models import (
 from .fla_attn.modeling_bert import BertModel
 from .seq_stu_model import seq_stu_align_encoder
 from .seq_encoder import export_encoder
-from pkg_seq_stu.constants import pretrain_root_path, AA_TO_IDX
+from pkg_seq_stu.constants import AA_TO_IDX
 import os
 
 from einops import rearrange
@@ -46,14 +46,15 @@ class seq_stu_task_encoder(FairseqEncoder):
     ):
         super().__init__(dictionary)
         self.model = seq_stu_align_encoder(args, dictionary)
+        print(f'donot load the pretrained model!!!')
 
-        pretrained_model_path = os.path.join(pretrain_root_path, args.checkpoint , "checkpoint_last.pt")
-        model_checkpoint = torch.load(pretrained_model_path, map_location='cpu')["model"]
+        # pretrained_model_path = os.path.join(pretrain_root_path, args.checkpoint , "checkpoint_last.pt")
+        # model_checkpoint = torch.load(pretrained_model_path, map_location='cpu')["model"]
 
-        enc_stripped = {k[len("encoder."):]: v for k, v in model_checkpoint.items()}
+        # enc_stripped = {k[len("encoder."):]: v for k, v in model_checkpoint.items()}
 
-        self.model.load_state_dict(enc_stripped, strict=True)
-        print(f'loading model from: {pretrained_model_path}')
+        # self.model.load_state_dict(enc_stripped, strict=True)
+        # print(f'loading model from: {pretrained_model_path}')
 
         self.pred_head = nn.Linear(args.hidden_size, 33)
 

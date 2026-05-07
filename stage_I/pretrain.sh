@@ -13,7 +13,7 @@ torchrun \
   --nproc_per_node=8 \
   --node_rank="${NODE_RANK}" \
   $(which fairseq-train) \
-    --data /root/huxiaowen/mut_llm/MmProt/stage_I/toy \
+    --data /root/autodl-tmp/MmProt/stage_I/toy \
     --user-dir pkg_seq_stu \
     --task fla_align_tasks \
     --arch fla_align_model_base \
@@ -27,7 +27,7 @@ torchrun \
     --temperature 0.07 \
     --optimizer adam \
     --adam-betas '(0.9,0.98)' \
-    --lr 1e-4 \
+    --lr 3e-4 \
     --log-interval 100 \
     --lr-scheduler inverse_sqrt \
     --clip-norm 1.0 \

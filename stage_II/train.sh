@@ -3,7 +3,7 @@ set -euo pipefail
 
 # 位置参数
 GPU_IDS="${1:-0}"            # 例如 0 或 0,1 或 0,1,2
-DATA_NAME="${2:-gb1}"        # 例如 gb1 / avgfp / dlg4-2022-binding ...
+DATA_NAME="${2:-toy}"        # 例如 gb1 / avgfp / dlg4-2022-binding ...
 
 export NUMEXPR_MAX_THREADS=32
 export NCCL_DEBUG=INFO
@@ -45,7 +45,7 @@ CUDA_VISIBLE_DEVICES="${GPU_IDS_CLEAN}" torchrun \
     --warmup-updates 4000 \
     --warmup-init-lr 1e-7 \
     --ddp-backend legacy_ddp \
-    --save-dir "tmp" \
+    --save-dir "toy" \
     --skip-invalid-size-inputs-valid-test \
     --keep-interval-updates 1 \
     --save-interval 1 \

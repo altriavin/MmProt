@@ -6,7 +6,7 @@ export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 
 GPU_IDS="${1:-0}"
-DATA_NAME="${2:-gb1}"
+DATA_NAME="${2:-toy}"
 TEST_NAME="${3:-test}"
 BETA="${4:-0.5}"
 GAMMA="${5:-0.5}"

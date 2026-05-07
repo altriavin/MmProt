@@ -12,12 +12,12 @@ export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 
 GPU_IDS="${1:-0}"
-DATA_NAME="${2:-gb1}"
+DATA_NAME="${2:-avgfp}"
 SPLIT_PREFIX="${3:-mutation}"
 BETA="${4:-0.5}"
 GAMMA="${5:-0.5}"
 
-DATA_ROOT="/root/huxiaowen/mut_llm/MmProt/protein_fitness_prediction/toy"
+DATA_ROOT="/root/autodl-tmp/MmProt/protein_fitness_prediction/toy"
 
 shopt -s nullglob
 
