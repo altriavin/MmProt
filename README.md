@@ -21,18 +21,6 @@ For protein structures, Foldseek is used to convert structural information into 
 
 ## Installation
 
-### Requirements
-
-- Python 3.10
-- PyTorch 2.4.1 + CUDA 12.1
-- fairseq
-- transformers
-- flash-attn
-- einops
-- biopython
-- lmdb
-- pandas
-
 ### Setup
 
 ```bash
